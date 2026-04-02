@@ -51,19 +51,63 @@
 </div>
 
 <!-- Camera section -->
-<div id="camera-section" style="margin-bottom:1.25rem;">
-  <div class="card" style="margin-bottom:.75rem;">
-    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">
-      Hold the student's ID card steady in front of the camera. Scanning is continuous.
-    </p>
-    <div id="video-wrap">
-      <video id="scanner-video" autoplay muted playsinline></video>
-      <div id="scan-line"></div>
+<div id="camera-section" style="display:none;margin-bottom:1.25rem;">
+  <div class="card">
+
+    <!-- Status bar — always visible when camera is active -->
+    <div id="cam-status" style="
+      display:flex;align-items:center;gap:10px;
+      padding:10px 14px;border-radius:var(--radius);
+      background:#1a1a1a;color:#fff;font-size:14px;
+      margin-bottom:12px;min-height:44px;">
+      <span id="cam-dot" style="
+        width:10px;height:10px;border-radius:50%;
+        background:#888;flex-shrink:0;
+        transition:background 0.2s;"></span>
+      <span id="cam-status-text">Starting camera…</span>
     </div>
-    <div id="flash-cam" class="scan-flash hidden" style="margin-top:10px;"></div>
-    <button class="btn btn-outline btn-sm" onclick="stopCamera()" style="margin-top:10px;">Stop camera</button>
+
+    <!-- Last scan result — large and persistent -->
+    <div id="last-scan-box" style="
+      display:none;
+      padding:14px 16px;border-radius:var(--radius);
+      margin-bottom:12px;font-size:15px;font-weight:500;
+      border:2px solid transparent;">
+      <div style="font-size:11px;font-weight:400;opacity:0.7;margin-bottom:3px;">Last scan</div>
+      <div id="last-scan-text"></div>
+    </div>
+
+    <!-- Video preview -->
+    <div style="position:relative;background:#000;border-radius:var(--radius);overflow:hidden;max-width:100%;">
+      <video id="scanner-video" autoplay muted playsinline
+             style="width:100%;display:block;max-height:340px;object-fit:cover;"></video>
+
+      <!-- Animated scan line overlay -->
+      <div style="position:absolute;inset:0;pointer-events:none;">
+        <div id="scan-line" style="
+          position:absolute;left:5%;right:5%;height:2px;
+          background:rgba(43,108,176,0.85);
+          box-shadow:0 0 8px rgba(43,108,176,0.6);
+          animation:scanline 2s ease-in-out infinite;top:30%;"></div>
+        <!-- Corner guides -->
+        <div style="position:absolute;top:12px;left:12px;width:24px;height:24px;border-top:3px solid #2b6cb0;border-left:3px solid #2b6cb0;border-radius:2px 0 0 0;"></div>
+        <div style="position:absolute;top:12px;right:12px;width:24px;height:24px;border-top:3px solid #2b6cb0;border-right:3px solid #2b6cb0;border-radius:0 2px 0 0;"></div>
+        <div style="position:absolute;bottom:12px;left:12px;width:24px;height:24px;border-bottom:3px solid #2b6cb0;border-left:3px solid #2b6cb0;border-radius:0 0 0 2px;"></div>
+        <div style="position:absolute;bottom:12px;right:12px;width:24px;height:24px;border-bottom:3px solid #2b6cb0;border-right:3px solid #2b6cb0;border-radius:0 0 2px 0;"></div>
+      </div>
+    </div>
+
+    <p style="font-size:12px;color:var(--muted);margin-top:8px;margin-bottom:10px;text-align:center;">
+      Hold the ID card steady within the frame — scanning is automatic
+    </p>
+
+    <button class="btn btn-outline btn-sm" onclick="stopCamera()">Stop camera</button>
   </div>
 </div>
+
+<style>
+@keyframes scanline { 0%,100%{top:15%} 50%{top:80%} }
+</style>
 
 <!-- Attendance table -->
 <div class="table-wrap">
@@ -98,7 +142,7 @@
 const SESSION_ID = {{ sess.id }};
 const DEDUP_MS   = {{ dedup_seconds }} * 1000;
 let codeReader   = null;
-let lastScanned  = {};  // studentId -> timestamp (client-side dedup for camera)
+let lastScanned  = {};
 let currentMode  = 'usb';
 
 // ── Mode toggle ───────────────────────────────────────────────────
@@ -113,12 +157,31 @@ function setMode(mode) {
   if (mode === 'usb') document.getElementById('scan-input').focus();
 }
 
+// ── Camera status helpers ─────────────────────────────────────────
+function setCamStatus(text, color) {
+  document.getElementById('cam-status-text').textContent = text;
+  document.getElementById('cam-dot').style.background = color || '#888';
+}
+
+function showLastScan(msg, type) {
+  const box = document.getElementById('last-scan-box');
+  const txt = document.getElementById('last-scan-text');
+  const styles = {
+    success: { bg:'#f0fff4', border:'#9ae6b4', color:'#276749' },
+    warning: { bg:'#fffbeb', border:'#fbd38d', color:'#744210' },
+    error:   { bg:'#fff5f5', border:'#feb2b2', color:'#c53030' },
+  }[type] || { bg:'#eee', border:'#ccc', color:'#333' };
+
+  txt.textContent = msg;
+  box.style.display     = 'block';
+  box.style.background  = styles.bg;
+  box.style.borderColor = styles.border;
+  box.style.color       = styles.color;
+}
+
 // ── USB / keyboard scan ───────────────────────────────────────────
 const scanInput = document.getElementById('scan-input');
 scanInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitScan(); });
-
-// Auto-capture: USB scanners type fast then send Enter.
-// Focus the input whenever the page is visible so scans are never lost.
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && currentMode === 'usb') scanInput.focus();
 });
@@ -134,39 +197,56 @@ async function submitScan() {
 
 // ── Camera scan (ZXing) ───────────────────────────────────────────
 function startCamera() {
-  if (!window.ZXing) { showFlash('cam', 'ZXing library not loaded.', 'error'); return; }
+  if (!window.ZXing) {
+    setCamStatus('ZXing library failed to load — try refreshing.', '#c53030');
+    return;
+  }
+  setCamStatus('Requesting camera access…', '#888');
   codeReader = new ZXing.BrowserMultiFormatReader();
+
   codeReader.listVideoInputDevices().then(devices => {
-    // prefer rear camera on mobile
-    const dev = devices.find(d => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
+    if (!devices || devices.length === 0) {
+      setCamStatus('No camera found on this device.', '#c53030');
+      return;
+    }
+    // Prefer rear/environment camera on mobile
+    const dev = devices.find(d => /back|rear|environment/i.test(d.label))
+              || devices[devices.length - 1];
     const deviceId = dev ? dev.deviceId : undefined;
+
+    setCamStatus('Camera active — hold barcode in frame', '#38a169');
+
     codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', async (result, err) => {
       if (!result) return;
-      const id = result.getText().trim();
-      // client-side dedup for camera (same ID within DEDUP_MS)
+      const id  = result.getText().trim();
       const now = Date.now();
       if (lastScanned[id] && (now - lastScanned[id]) < DEDUP_MS) return;
       lastScanned[id] = now;
       await sendScan(id, 'cam');
     });
+
   }).catch(err => {
-    showFlash('cam', 'Camera error: ' + err.message, 'error');
+    const msg = err.name === 'NotAllowedError'
+      ? 'Camera permission denied — please allow camera access in your browser.'
+      : 'Camera error: ' + err.message;
+    setCamStatus(msg, '#c53030');
   });
 }
 
 function stopCamera() {
   if (codeReader) { codeReader.reset(); codeReader = null; }
   const video = document.getElementById('scanner-video');
-  if (video.srcObject) {
+  if (video && video.srcObject) {
     video.srcObject.getTracks().forEach(t => t.stop());
     video.srcObject = null;
   }
+  setCamStatus('Camera stopped.', '#888');
 }
 
 // ── Core scan API call ────────────────────────────────────────────
-async function sendScan(studentId, flashTarget) {
+async function sendScan(studentId, source) {
   try {
-    const res = await fetch('/api/scan', {
+    const res  = await fetch('/api/scan', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({session_id: SESSION_ID, student_id: studentId})
@@ -174,22 +254,32 @@ async function sendScan(studentId, flashTarget) {
     const data = await res.json();
 
     if (data.status === 'ok') {
-      showFlash(flashTarget, '✓ ' + data.message, 'success');
+      const msg = '✓ ' + data.message;
+      if (source === 'cam') showLastScan(msg, 'success');
+      else showFlash('usb', msg, 'success');
       updateRow(data.student_id, data.action, data.time);
       updateStats();
     } else if (data.status === 'duplicate') {
-      showFlash(flashTarget, '⚠ ' + data.message, 'warning');
+      const msg = '⚠ ' + data.message;
+      if (source === 'cam') showLastScan(msg, 'warning');
+      else showFlash('usb', msg, 'warning');
     } else if (data.status === 'done') {
-      showFlash(flashTarget, 'ℹ ' + data.message, 'warning');
+      const msg = 'ℹ ' + data.message;
+      if (source === 'cam') showLastScan(msg, 'warning');
+      else showFlash('usb', msg, 'warning');
     } else {
-      showFlash(flashTarget, '✗ ' + data.message, 'error');
+      const msg = '✗ ' + data.message;
+      if (source === 'cam') showLastScan(msg, 'error');
+      else showFlash('usb', msg, 'error');
     }
   } catch (e) {
-    showFlash(flashTarget, 'Network error — check connection.', 'error');
+    const msg = 'Network error — check connection.';
+    if (source === 'cam') showLastScan(msg, 'error');
+    else showFlash('usb', msg, 'error');
   }
 }
 
-// ── DOM helpers ───────────────────────────────────────────────────
+// ── USB flash message ─────────────────────────────────────────────
 function showFlash(target, msg, type) {
   const el = document.getElementById('flash-' + target);
   const colors = {
@@ -203,9 +293,10 @@ function showFlash(target, msg, type) {
   el.style.border = '1px solid ' + (colors.bg || 'transparent');
   el.classList.remove('hidden');
   clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.add('hidden'), 4000);
+  el._t = setTimeout(() => el.classList.add('hidden'), 5000);
 }
 
+// ── Table + stats update ──────────────────────────────────────────
 function updateRow(studentId, action, time) {
   const ti = document.getElementById('ti-' + studentId);
   const to = document.getElementById('to-' + studentId);
@@ -229,8 +320,8 @@ function updateStats() {
       present++;
   });
   document.getElementById('s-present').textContent = present;
-  document.getElementById('s-absent').textContent = total - present;
-  document.getElementById('s-pct').textContent = total ? Math.round(present/total*100) + '%' : '0%';
+  document.getElementById('s-absent').textContent  = total - present;
+  document.getElementById('s-pct').textContent     = total ? Math.round(present / total * 100) + '%' : '0%';
 }
 </script>
 {% endblock %}
