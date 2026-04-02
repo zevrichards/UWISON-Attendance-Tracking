@@ -1,23 +1,36 @@
 {% extends "base.html" %}
 {% block title %}New Course{% endblock %}
 {% block content %}
-<div style="max-width:480px;">
+<div style="max-width:560px;">
   <div class="page-header">
     <h1>New Course</h1>
-    <p>After creating, you'll upload the student roster.</p>
+    <p>Upload your Banner class list — the course and full roster are created in one step.</p>
   </div>
+
+  <div class="card" style="margin-bottom:1rem;">
+    <h2 style="font-size:15px;font-weight:600;margin-bottom:.75rem;">How to get the Banner export</h2>
+    <ol style="font-size:13px;color:var(--muted);line-height:2;padding-left:1.25rem;">
+      <li>Log into Banner → Course Listing</li>
+      <li>Select your course and semester</li>
+      <li>Export / download as <strong>Excel (.xlsx)</strong></li>
+      <li>Upload that file below — course code, name and all students are imported automatically</li>
+    </ol>
+  </div>
+
   <div class="card">
-    <form method="POST">
+    <form method="POST" enctype="multipart/form-data">
       <div class="form-group">
-        <label>Course Code</label>
-        <input type="text" name="code" required placeholder="e.g. COMP2040" style="text-transform:uppercase;">
+        <label>Banner class list (.xlsx)</label>
+        <input type="file" name="roster" accept=".xlsx,.xls,.csv" required
+               style="padding:6px;border:1px solid var(--border);border-radius:var(--radius);width:100%;font-size:14px;">
       </div>
-      <div class="form-group">
-        <label>Course Name</label>
-        <input type="text" name="name" required placeholder="e.g. Data Structures and Algorithms">
+      <div class="alert alert-warning" style="font-size:13px;">
+        The system reads <code>Crs_Code</code>, <code>Course</code>, <code>ID</code>,
+        <code>first_name</code>, and <code>last_name</code> from the Banner export automatically.
+        If this course already exists, the roster will be updated without creating a duplicate.
       </div>
-      <div style="display:flex;gap:8px;margin-top:1rem;">
-        <button type="submit" class="btn btn-primary">Create &amp; upload roster →</button>
+      <div style="display:flex;gap:8px;">
+        <button type="submit" class="btn btn-primary">Upload &amp; create course</button>
         <a href="{{ url_for('courses') }}" class="btn btn-outline">Cancel</a>
       </div>
     </form>

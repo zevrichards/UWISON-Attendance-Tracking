@@ -56,10 +56,20 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS courses (
                 id         SERIAL PRIMARY KEY,
-                code       TEXT NOT NULL,
+                code       TEXT NOT NULL UNIQUE,
                 name       TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+            -- Add unique constraint if table already exists without it
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'courses_code_key'
+                ) THEN
+                    ALTER TABLE courses ADD CONSTRAINT courses_code_key UNIQUE (code);
+                END IF;
+            END$$;
 
             CREATE TABLE IF NOT EXISTS students (
                 id         SERIAL PRIMARY KEY,
@@ -171,18 +181,115 @@ def courses():
 @app.route("/courses/new", methods=["GET", "POST"])
 @login_required
 def new_course():
+    """Upload a Banner class list to create/update a course and roster in one step."""
     if request.method == "POST":
-        code = request.form["code"].strip().upper()
-        name = request.form["name"].strip()
+        f = request.files.get("roster")
+        if not f or not f.filename:
+            flash("Please select a file.", "error")
+            return redirect(request.url)
+
+        fname = f.filename.lower()
+        rows  = []
+
+        if fname.endswith(".xlsx") or fname.endswith(".xls"):
+            import openpyxl as _xl
+            wb       = _xl.load_workbook(f, read_only=True, data_only=True)
+            ws       = wb.active
+            all_rows = list(ws.iter_rows(values_only=True))
+            if not all_rows:
+                flash("Spreadsheet appears to be empty.", "error")
+                return redirect(request.url)
+            headers = [str(h).strip().lower() if h else "" for h in all_rows[0]]
+            for raw in all_rows[1:]:
+                row = {headers[i]: (str(v).strip() if v is not None else "")
+                       for i, v in enumerate(raw)}
+                rows.append(row)
+        elif fname.endswith(".csv"):
+            stream = io.StringIO(f.stream.read().decode("utf-8-sig"))
+            reader = csv.DictReader(stream)
+            rows   = [{k.strip().lower(): (v or "").strip()
+                       for k, v in row.items()} for row in reader]
+        else:
+            flash("Please upload a Banner .xlsx export or a .csv file.", "error")
+            return redirect(request.url)
+
+        if not rows:
+            flash("File appears to be empty.", "error")
+            return redirect(request.url)
+
+        sample = rows[0]
+        keys   = list(sample.keys())
+
+        # Extract course code and name from Banner columns
+        if "crs_code" not in keys or "course" not in keys:
+            flash("Could not detect Banner columns (crs_code, course). Please use a Banner xlsx export.", "error")
+            return redirect(request.url)
+
+        code = sample.get("crs_code", "").strip().upper()
+        name = sample.get("course",   "").strip()
+
+        if not code or not name:
+            flash("Course code or name is blank in the file.", "error")
+            return redirect(request.url)
+
+        # Detect student ID and name columns
+        id_col = "id" if "id" in keys else next((k for k in keys if "id" in k), None)
+        has_split_names = "last_name" in keys and "first_name" in keys
+        name_col = None if has_split_names else next(
+            (k for k in keys if "name" in k and "last" not in k
+             and "first" not in k and "middle" not in k), None)
+
+        if not id_col or (not has_split_names and not name_col):
+            flash(f"Could not detect student ID/name columns. Found: {keys}.", "error")
+            return redirect(request.url)
+
+        # Upsert course — update name if code already exists
         with get_db() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO courses (code, name, created_at) VALUES (%s,%s,%s) RETURNING id",
+                    """INSERT INTO courses (code, name, created_at)
+                       VALUES (%s, %s, %s)
+                       ON CONFLICT (code)
+                       DO UPDATE SET name = EXCLUDED.name
+                       RETURNING id""",
                     (code, name, datetime.utcnow().isoformat())
                 )
                 course_id = cur.fetchone()["id"]
-        flash(f"Course {code} created.", "success")
-        return redirect(url_for("upload_roster", course_id=course_id))
+
+                added = updated = skipped = 0
+                for row in rows:
+                    sid = row.get(id_col, "").strip().lstrip("'")
+                    if has_split_names:
+                        sname = f"{row.get('first_name','').strip()} {row.get('last_name','').strip()}".strip()
+                    else:
+                        sname = row.get(name_col, "").strip()
+
+                    if not sid or not sname or sid.lower() in ("none", "nan", ""):
+                        skipped += 1
+                        continue
+
+                    cur.execute(
+                        """INSERT INTO students (course_id, student_id, name)
+                           VALUES (%s, %s, %s)
+                           ON CONFLICT (course_id, student_id)
+                           DO UPDATE SET name = EXCLUDED.name
+                           RETURNING (xmax = 0) AS inserted""",
+                        (course_id, sid, sname)
+                    )
+                    result = cur.fetchone()
+                    if result and result["inserted"]:
+                        added += 1
+                    else:
+                        updated += 1
+
+        parts = [f"{added} student(s) added"]
+        if updated:
+            parts.append(f"{updated} updated")
+        if skipped:
+            parts.append(f"{skipped} skipped")
+        flash(f"Course {code} — {name} ready. {', '.join(parts)}.", "success")
+        return redirect(url_for("course_detail", course_id=course_id))
+
     return render_template("new_course.html")
 
 
