@@ -103,17 +103,6 @@
                 gap: 8px; transition: opacity 0.3s; }
   .scan-flash.hidden { opacity: 0; }
 
-  /* Camera overlay */
-  #camera-section { display: none; }
-  #camera-section.active { display: block; }
-  #video-wrap { position: relative; border-radius: var(--radius-lg); overflow: hidden;
-                background: #000; max-width: 480px; margin: 0 auto; }
-  #scanner-video { width: 100%; display: block; }
-  #scan-line { position: absolute; left: 10%; right: 10%; height: 2px;
-               background: rgba(43,108,176,0.8); top: 50%;
-               animation: scanline 2s ease-in-out infinite; }
-  @keyframes scanline { 0%,100%{top:20%} 50%{top:80%} }
-
   @media (max-width: 600px) {
     .container { padding: 1rem; }
     .stats { grid-template-columns: repeat(2, 1fr); }

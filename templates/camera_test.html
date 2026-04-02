@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Camera Test</title>
+</head>
+<body style="background:#111;color:#fff;font-family:sans-serif;padding:20px;">
+<h2>Camera Test</h2>
+<p id="status" style="color:yellow;">Click the button below</p>
+<br>
+<button onclick="startCam()" style="padding:10px 20px;font-size:16px;">Start Camera</button>
+<br><br>
+<video id="v" autoplay muted playsinline
+       style="width:100%;max-width:640px;background:#000;border:3px solid lime;">
+</video>
+
+<script>
+async function startCam() {
+  const status = document.getElementById('status');
+  const video  = document.getElementById('v');
+  status.textContent = 'Asking for camera...';
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    status.textContent = 'Got stream — attaching...';
+    video.srcObject = stream;
+    status.textContent = 'Done — you should see video above';
+  } catch(e) {
+    status.textContent = 'ERROR: ' + e.name + ' — ' + e.message;
+  }
+}
+</script>
+</body>
+</html>
