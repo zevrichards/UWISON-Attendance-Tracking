@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}New Course{% endblock %}
+{% block content %}
+<div style="max-width:480px;">
+  <div class="page-header">
+    <h1>New Course</h1>
+    <p>After creating, you'll upload the student roster.</p>
+  </div>
+  <div class="card">
+    <form method="POST">
+      <div class="form-group">
+        <label>Course Code</label>
+        <input type="text" name="code" required placeholder="e.g. COMP2040" style="text-transform:uppercase;">
+      </div>
+      <div class="form-group">
+        <label>Course Name</label>
+        <input type="text" name="name" required placeholder="e.g. Data Structures and Algorithms">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:1rem;">
+        <button type="submit" class="btn btn-primary">Create &amp; upload roster →</button>
+        <a href="{{ url_for('courses') }}" class="btn btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

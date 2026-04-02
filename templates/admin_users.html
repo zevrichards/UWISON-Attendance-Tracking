@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}User Management{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div>
+    <h1>User Management</h1>
+    <p>Create and manage staff accounts for the attendance system.</p>
+  </div>
+  <a href="{{ url_for('backup') }}" class="btn btn-outline">
+    ↓ Download full backup
+  </a>
+</div>
+<div class="alert alert-warning" style="font-size:13px;">
+  <strong>Backup tip:</strong> Download a backup regularly and keep it somewhere safe (Google Drive, USB drive).
+  The ZIP contains all courses, rosters, sessions, and attendance records as CSVs.
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start;flex-wrap:wrap;">
+  <div class="card">
+    <h2 style="font-size:16px;font-weight:600;margin-bottom:1rem;">Create new user</h2>
+    <form method="POST">
+      <input type="hidden" name="action" value="create">
+      <div class="form-group">
+        <label>Username (UWI ID or name)</label>
+        <input type="text" name="username" required placeholder="e.g. 816012345 or jsmith">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" name="password" required placeholder="Min 8 characters">
+      </div>
+      <div class="form-group">
+        <label>Role</label>
+        <select name="role">
+          <option value="staff">Staff (can scan, view reports)</option>
+          <option value="admin">Admin (+ manage users)</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Create user</button>
+    </form>
+  </div>
+
+  <div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Username</th><th>Role</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.username }}</td>
+            <td><span class="badge {{ 'badge-present' if u.role == 'admin' else 'badge-out' }}">{{ u.role }}</span></td>
+            <td>
+              {% if u.id != session.user_id %}
+              <form method="POST" style="display:inline;" onsubmit="return confirm('Delete {{ u.username }}?')">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="user_id" value="{{ u.id }}">
+                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+              </form>
+              {% else %}
+              <span style="font-size:12px;color:var(--muted);">you</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% block title %}{{ sess.code }} — {{ sess.label }}{% endblock %}
+{% block content %}
+
+<div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div>
+    <h1>{{ sess.code }} — {{ sess.label }}</h1>
+    <p>{{ sess.date }} &nbsp;·&nbsp; <a href="{{ url_for('course_detail', course_id=sess.course_id) }}">← Back to course</a></p>
+  </div>
+  <a href="{{ url_for('export_session_csv', session_id=sess.id) }}" class="btn btn-outline btn-sm">↓ Export CSV</a>
+</div>
+
+<!-- Stats -->
+<div class="stats">
+  <div class="stat">
+    <div class="stat-val" id="s-total">{{ total }}</div>
+    <div class="stat-label">Enrolled</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" id="s-present" style="color:#276749;">{{ present }}</div>
+    <div class="stat-label">Present</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" id="s-absent" style="color:#c53030;">{{ total - present }}</div>
+    <div class="stat-label">Absent</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" id="s-pct">{{ ((present/total*100)|round(0)|int) if total else 0 }}%</div>
+    <div class="stat-label">Attendance</div>
+  </div>
+</div>
+
+<!-- Scanner toggle -->
+<div class="toolbar">
+  <button id="btn-usb" class="btn btn-primary btn-sm" onclick="setMode('usb')">USB / Keyboard scanner</button>
+  <button id="btn-cam" class="btn btn-outline btn-sm" onclick="setMode('camera')">📷 Camera scanner</button>
+</div>
+
+<!-- USB input section -->
+<div id="usb-section" class="card" style="margin-bottom:1.25rem;">
+  <p style="font-size:13px;color:var(--muted);margin-bottom:8px;">
+    Point the USB barcode scanner at the student's ID card. Input is captured automatically.<br>
+    You can also type the ID and press <kbd style="font-family:monospace;background:#eee;padding:1px 5px;border-radius:3px;">Enter</kbd>.
+  </p>
+  <div style="display:flex;gap:8px;">
+    <input type="text" id="scan-input" placeholder="Student ID will appear here..."
+           style="flex:1;font-family:monospace;font-size:16px;" autocomplete="off">
+    <button class="btn btn-primary" onclick="submitScan()">Log ↵</button>
+  </div>
+  <div id="flash-usb" class="scan-flash hidden" style="margin-top:10px;"></div>
+</div>
+
+<!-- Camera section -->
+<div id="camera-section" style="margin-bottom:1.25rem;">
+  <div class="card" style="margin-bottom:.75rem;">
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px;">
+      Hold the student's ID card steady in front of the camera. Scanning is continuous.
+    </p>
+    <div id="video-wrap">
+      <video id="scanner-video" autoplay muted playsinline></video>
+      <div id="scan-line"></div>
+    </div>
+    <div id="flash-cam" class="scan-flash hidden" style="margin-top:10px;"></div>
+    <button class="btn btn-outline btn-sm" onclick="stopCamera()" style="margin-top:10px;">Stop camera</button>
+  </div>
+</div>
+
+<!-- Attendance table -->
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Student ID</th><th>Name</th><th>Time In</th><th>Time Out</th><th>Status</th></tr>
+    </thead>
+    <tbody id="att-table">
+      {% for r in records %}
+      <tr id="row-{{ r.student_id }}">
+        <td style="font-family:monospace;font-size:12px;">{{ r.student_id }}</td>
+        <td>{{ r.name }}</td>
+        <td id="ti-{{ r.student_id }}">{{ r.time_in[11:19] if r.time_in else "—" }}</td>
+        <td id="to-{{ r.student_id }}">{{ r.time_out[11:19] if r.time_out else "—" }}</td>
+        <td id="st-{{ r.student_id }}">
+          {% if r.time_in and r.time_out %}
+            <span class="badge badge-out">Out</span>
+          {% elif r.time_in %}
+            <span class="badge badge-present">Present</span>
+          {% else %}
+            <span class="badge badge-absent">Absent</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
+<script>
+const SESSION_ID = {{ sess.id }};
+const DEDUP_MS   = {{ dedup_seconds }} * 1000;
+let codeReader   = null;
+let lastScanned  = {};  // studentId -> timestamp (client-side dedup for camera)
+let currentMode  = 'usb';
+
+// ── Mode toggle ───────────────────────────────────────────────────
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('usb-section').style.display    = mode === 'usb'    ? '' : 'none';
+  document.getElementById('camera-section').style.display = mode === 'camera' ? '' : 'none';
+  document.getElementById('btn-usb').className = 'btn btn-sm ' + (mode === 'usb' ? 'btn-primary' : 'btn-outline');
+  document.getElementById('btn-cam').className = 'btn btn-sm ' + (mode === 'camera' ? 'btn-primary' : 'btn-outline');
+  if (mode === 'camera') startCamera();
+  else stopCamera();
+  if (mode === 'usb') document.getElementById('scan-input').focus();
+}
+
+// ── USB / keyboard scan ───────────────────────────────────────────
+const scanInput = document.getElementById('scan-input');
+scanInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitScan(); });
+
+// Auto-capture: USB scanners type fast then send Enter.
+// Focus the input whenever the page is visible so scans are never lost.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && currentMode === 'usb') scanInput.focus();
+});
+scanInput.focus();
+
+async function submitScan() {
+  const id = scanInput.value.trim();
+  scanInput.value = '';
+  scanInput.focus();
+  if (!id) return;
+  await sendScan(id, 'usb');
+}
+
+// ── Camera scan (ZXing) ───────────────────────────────────────────
+function startCamera() {
+  if (!window.ZXing) { showFlash('cam', 'ZXing library not loaded.', 'error'); return; }
+  codeReader = new ZXing.BrowserMultiFormatReader();
+  codeReader.listVideoInputDevices().then(devices => {
+    // prefer rear camera on mobile
+    const dev = devices.find(d => /back|rear|environment/i.test(d.label)) || devices[devices.length - 1];
+    const deviceId = dev ? dev.deviceId : undefined;
+    codeReader.decodeFromVideoDevice(deviceId, 'scanner-video', async (result, err) => {
+      if (!result) return;
+      const id = result.getText().trim();
+      // client-side dedup for camera (same ID within DEDUP_MS)
+      const now = Date.now();
+      if (lastScanned[id] && (now - lastScanned[id]) < DEDUP_MS) return;
+      lastScanned[id] = now;
+      await sendScan(id, 'cam');
+    });
+  }).catch(err => {
+    showFlash('cam', 'Camera error: ' + err.message, 'error');
+  });
+}
+
+function stopCamera() {
+  if (codeReader) { codeReader.reset(); codeReader = null; }
+  const video = document.getElementById('scanner-video');
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
+}
+
+// ── Core scan API call ────────────────────────────────────────────
+async function sendScan(studentId, flashTarget) {
+  try {
+    const res = await fetch('/api/scan', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({session_id: SESSION_ID, student_id: studentId})
+    });
+    const data = await res.json();
+
+    if (data.status === 'ok') {
+      showFlash(flashTarget, '✓ ' + data.message, 'success');
+      updateRow(data.student_id, data.action, data.time);
+      updateStats();
+    } else if (data.status === 'duplicate') {
+      showFlash(flashTarget, '⚠ ' + data.message, 'warning');
+    } else if (data.status === 'done') {
+      showFlash(flashTarget, 'ℹ ' + data.message, 'warning');
+    } else {
+      showFlash(flashTarget, '✗ ' + data.message, 'error');
+    }
+  } catch (e) {
+    showFlash(flashTarget, 'Network error — check connection.', 'error');
+  }
+}
+
+// ── DOM helpers ───────────────────────────────────────────────────
+function showFlash(target, msg, type) {
+  const el = document.getElementById('flash-' + target);
+  const colors = {
+    success: {bg:'var(--success-bg)', color:'var(--success)'},
+    warning: {bg:'var(--warning-bg)', color:'var(--warning)'},
+    error:   {bg:'var(--danger-bg)',  color:'var(--danger)'}
+  }[type] || {};
+  el.textContent = msg;
+  el.style.background = colors.bg || '';
+  el.style.color = colors.color || '';
+  el.style.border = '1px solid ' + (colors.bg || 'transparent');
+  el.classList.remove('hidden');
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+function updateRow(studentId, action, time) {
+  const ti = document.getElementById('ti-' + studentId);
+  const to = document.getElementById('to-' + studentId);
+  const st = document.getElementById('st-' + studentId);
+  if (!ti) return;
+  if (action === 'time_in') {
+    ti.textContent = time;
+    st.innerHTML = '<span class="badge badge-present">Present</span>';
+  } else if (action === 'time_out') {
+    to.textContent = time;
+    st.innerHTML = '<span class="badge badge-out">Out</span>';
+  }
+}
+
+function updateStats() {
+  const rows = document.querySelectorAll('#att-table tr');
+  let present = 0, total = rows.length;
+  rows.forEach(r => {
+    const badge = r.querySelector('.badge');
+    if (badge && (badge.classList.contains('badge-present') || badge.classList.contains('badge-out')))
+      present++;
+  });
+  document.getElementById('s-present').textContent = present;
+  document.getElementById('s-absent').textContent = total - present;
+  document.getElementById('s-pct').textContent = total ? Math.round(present/total*100) + '%' : '0%';
+}
+</script>
+{% endblock %}

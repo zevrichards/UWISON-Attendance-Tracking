@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: lab-attendance
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false          # Set this manually in the Render dashboard
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lab-attendance-db
+          property: connectionString
+      - key: DEDUP_SECONDS
+        value: 30
+
+databases:
+  - name: lab-attendance-db
+    plan: free

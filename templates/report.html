@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Report — {{ course.code }}{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div>
+    <h1>Attendance Report — {{ course.code }}</h1>
+    <p>{{ course.name }} &nbsp;·&nbsp; {{ sessions|length }} sessions recorded</p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="{{ url_for('course_detail', course_id=course.id) }}" class="btn btn-outline btn-sm">← Course</a>
+    <a href="{{ url_for('export_semester_excel', course_id=course.id) }}" class="btn btn-primary btn-sm">↓ Export Excel</a>
+  </div>
+</div>
+
+{% set at_risk_count = report | selectattr('at_risk') | list | length %}
+{% if at_risk_count > 0 %}
+<div class="alert alert-error">
+  ⚠ <strong>{{ at_risk_count }} student{{ 's' if at_risk_count > 1 }} below 75% attendance</strong>
+  and at risk of failing the attendance requirement.
+</div>
+{% else %}
+<div class="alert alert-success">
+  ✓ All students are currently meeting the 75% attendance requirement.
+</div>
+{% endif %}
+
+<!-- Summary stats -->
+<div class="stats" style="margin-bottom:1.5rem;">
+  <div class="stat">
+    <div class="stat-val">{{ report|length }}</div>
+    <div class="stat-label">Students</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">{{ sessions|length }}</div>
+    <div class="stat-label">Sessions</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" style="color:#c53030;">{{ at_risk_count }}</div>
+    <div class="stat-label">At risk (&lt;75%)</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val" style="color:#276749;">{{ report|length - at_risk_count }}</div>
+    <div class="stat-label">On track</div>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Student ID</th>
+        <th>Name</th>
+        {% for s in sessions %}
+        <th style="text-align:center;font-size:11px;">{{ s.label }}<br>{{ s.date }}</th>
+        {% endfor %}
+        <th style="text-align:center;">Attended</th>
+        <th style="text-align:center;">%</th>
+        <th style="text-align:center;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in report %}
+      <tr style="{{ 'background:#fff5f5;' if row.at_risk else '' }}">
+        <td style="font-family:monospace;font-size:12px;">{{ row.student_id }}</td>
+        <td>{{ row.name }}</td>
+        {% for s in sessions %}
+          {% set info = row.sessions[s.id] %}
+          <td style="text-align:center;">
+            {% if info.present %}
+              <span style="color:#276749;font-weight:600;">P</span>
+            {% else %}
+              <span style="color:#c53030;">A</span>
+            {% endif %}
+          </td>
+        {% endfor %}
+        <td style="text-align:center;">{{ row.attended }}/{{ row.total }}</td>
+        <td style="text-align:center;font-weight:600;color:{{ '#c53030' if row.at_risk else '#276749' }};">
+          {{ row.pct }}%
+        </td>
+        <td style="text-align:center;">
+          {% if row.at_risk %}
+            <span class="badge badge-risk">AT RISK</span>
+          {% else %}
+            <span class="badge badge-ok">OK</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p style="font-size:12px;color:var(--muted);margin-top:.75rem;">
+  P = Present &nbsp;·&nbsp; A = Absent &nbsp;·&nbsp; Threshold: 75% attendance required across all sessions.
+</p>
+{% endblock %}

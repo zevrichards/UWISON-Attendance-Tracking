@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ course.code }} — Lab Attendance{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+  <div>
+    <h1>{{ course.code }} — {{ course.name }}</h1>
+    <p>{{ student_count }} students enrolled</p>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a href="{{ url_for('upload_roster', course_id=course.id) }}" class="btn btn-outline btn-sm">Update roster</a>
+    <a href="{{ url_for('semester_report', course_id=course.id) }}" class="btn btn-outline btn-sm">Semester report</a>
+    <a href="{{ url_for('export_semester_excel', course_id=course.id) }}" class="btn btn-outline btn-sm">&#x2193; Excel</a>
+  </div>
+</div>
+
+<!-- New session form -->
+<div class="card" style="margin-bottom:1.5rem;">
+  <h2 style="font-size:16px;font-weight:600;margin-bottom:1rem;">Start new lab session</h2>
+  <form method="POST" action="{{ url_for('new_session', course_id=course.id) }}"
+        style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+    <div class="form-group" style="margin:0;flex:1;min-width:160px;">
+      <label>Session label</label>
+      <input type="text" name="label" required placeholder="e.g. Lab 01 — Week 3">
+    </div>
+    <div class="form-group" style="margin:0;min-width:150px;">
+      <label>Date</label>
+      <input type="date" name="date" required value="{{ today }}">
+    </div>
+    <button type="submit" class="btn btn-primary" style="height:38px;">Start scanning →</button>
+  </form>
+</div>
+
+<!-- Past sessions -->
+{% if sessions %}
+<h2 style="font-size:16px;font-weight:600;margin-bottom:.75rem;">Past sessions</h2>
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>Label</th><th>Date</th><th>Scans</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.label }}</td>
+        <td>{{ s.date }}</td>
+        <td>{{ s.scan_count }}</td>
+        <td style="text-align:right;">
+          <a href="{{ url_for('scan_session', session_id=s.id) }}" class="btn btn-outline btn-sm">Open</a>
+          <a href="{{ url_for('export_session_csv', session_id=s.id) }}" class="btn btn-outline btn-sm">&#x2193; CSV</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card" style="text-align:center;color:var(--muted);padding:2rem;">
+  No sessions yet. Start one above.
+</div>
+{% endif %}
+
+<script>
+document.querySelector('input[type=date]').value = new Date().toISOString().slice(0,10);
+</script>
+{% endblock %}

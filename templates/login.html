@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Login — Lab Attendance{% endblock %}
+{% block content %}
+<div style="max-width:380px;margin:4rem auto;">
+  <div class="card">
+    <div style="text-align:center;margin-bottom:1.5rem;">
+      <div style="font-size:32px;margin-bottom:8px;">&#x1F4CA;</div>
+      <h1 style="font-size:20px;font-weight:600;">Lab Attendance System</h1>
+      <p style="color:var(--muted);font-size:14px;margin-top:4px;">Sign in to continue</p>
+    </div>
+    <form method="POST">
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" name="username" required autofocus placeholder="e.g. 816012345">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" name="password" required placeholder="••••••••">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:.5rem;">
+        Sign in
+      </button>
+    </form>
+  </div>
+  <p style="text-align:center;font-size:13px;color:var(--muted);margin-top:1rem;">
+    Contact your administrator to get access.
+  </p>
+</div>
+{% endblock %}

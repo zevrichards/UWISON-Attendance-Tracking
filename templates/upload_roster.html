@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Upload Roster — {{ course.code }}{% endblock %}
+{% block content %}
+<div style="max-width:560px;">
+  <div class="page-header">
+    <h1>Upload Roster — {{ course.code }}</h1>
+    <p>Upload your Banner class list export, or a simple CSV.</p>
+  </div>
+
+  <div class="card" style="margin-bottom:1rem;">
+    <h2 style="font-size:15px;font-weight:600;margin-bottom:.75rem;">Banner export (recommended)</h2>
+    <ol style="font-size:13px;color:var(--muted);line-height:2;padding-left:1.25rem;">
+      <li>Log into Banner → Course Listing</li>
+      <li>Select your course and semester</li>
+      <li>Export / download as <strong>Excel (.xlsx)</strong></li>
+      <li>Upload that file directly below — no editing needed</li>
+    </ol>
+    <p style="font-size:12px;color:var(--muted);margin-top:.5rem;">
+      The system reads the <code>ID</code>, <code>first_name</code>, and <code>last_name</code> columns automatically.
+      Middle names, email, phone and other columns are ignored.
+    </p>
+  </div>
+
+  <div class="card">
+    <form method="POST" enctype="multipart/form-data">
+      <div class="form-group">
+        <label>Class list file (.xlsx or .csv)</label>
+        <input type="file" name="roster" accept=".xlsx,.xls,.csv" required
+               style="padding:6px;border:1px solid var(--border);border-radius:var(--radius);width:100%;font-size:14px;">
+      </div>
+
+      <details style="margin-bottom:1rem;">
+        <summary style="font-size:13px;color:var(--muted);cursor:pointer;">Using a simple CSV instead?</summary>
+        <div class="alert alert-warning" style="font-size:13px;margin-top:.5rem;">
+          CSV must have at minimum an <code>id</code> column and either a single <code>name</code> column
+          or separate <code>first_name</code> + <code>last_name</code> columns.<br><br>
+          <strong>Example (single name column):</strong><br>
+          <code>id,name<br>816036026,Aaliyah Ali<br>816033005,Mickel Arjoon</code>
+        </div>
+      </details>
+
+      <div class="alert alert-warning" style="font-size:13px;">
+        <strong>Re-uploading?</strong> Safe to do at any time. New students will be added,
+        existing students' names will be updated if corrected, and no attendance data
+        will be lost.
+      </div>
+
+      <div style="display:flex;gap:8px;">
+        <button type="submit" class="btn btn-primary">Upload roster</button>
+        <a href="{{ url_for('course_detail', course_id=course.id) }}" class="btn btn-outline">Skip for now</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
