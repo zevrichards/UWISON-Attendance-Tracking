@@ -12,22 +12,10 @@
 
 <!-- Stats -->
 <div class="stats">
-  <div class="stat">
-    <div class="stat-val" id="s-total">{{ total }}</div>
-    <div class="stat-label">Enrolled</div>
-  </div>
-  <div class="stat">
-    <div class="stat-val" id="s-present" style="color:#276749;">{{ present }}</div>
-    <div class="stat-label">Present</div>
-  </div>
-  <div class="stat">
-    <div class="stat-val" id="s-absent" style="color:#c53030;">{{ total - present }}</div>
-    <div class="stat-label">Absent</div>
-  </div>
-  <div class="stat">
-    <div class="stat-val" id="s-pct">{{ ((present/total*100)|round(0)|int) if total else 0 }}%</div>
-    <div class="stat-label">Attendance</div>
-  </div>
+  <div class="stat"><div class="stat-val" id="s-total">{{ total }}</div><div class="stat-label">Enrolled</div></div>
+  <div class="stat"><div class="stat-val" id="s-present" style="color:#276749;">{{ present }}</div><div class="stat-label">Present</div></div>
+  <div class="stat"><div class="stat-val" id="s-absent" style="color:#c53030;">{{ total - present }}</div><div class="stat-label">Absent</div></div>
+  <div class="stat"><div class="stat-val" id="s-pct">{{ ((present/total*100)|round(0)|int) if total else 0 }}%</div><div class="stat-label">Attendance</div></div>
 </div>
 
 <!-- Scanner toggle -->
@@ -54,60 +42,36 @@
 <div id="camera-section" style="display:none;margin-bottom:1.25rem;">
   <div class="card">
 
-    <!-- Status bar — always visible when camera is active -->
-    <div id="cam-status" style="
-      display:flex;align-items:center;gap:10px;
-      padding:10px 14px;border-radius:var(--radius);
-      background:#1a1a1a;color:#fff;font-size:14px;
-      margin-bottom:12px;min-height:44px;">
-      <span id="cam-dot" style="
-        width:10px;height:10px;border-radius:50%;
-        background:#888;flex-shrink:0;
-        transition:background 0.2s;"></span>
+    <!-- Status bar -->
+    <div id="cam-status" style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+         border-radius:var(--radius);background:#222;color:#fff;font-size:14px;margin-bottom:12px;">
+      <span id="cam-dot" style="width:10px;height:10px;border-radius:50%;background:#888;flex-shrink:0;"></span>
       <span id="cam-status-text">Starting camera…</span>
     </div>
 
-    <!-- Last scan result — large and persistent -->
-    <div id="last-scan-box" style="
-      display:none;
-      padding:14px 16px;border-radius:var(--radius);
-      margin-bottom:12px;font-size:15px;font-weight:500;
-      border:2px solid transparent;">
+    <!-- Last scan result -->
+    <div id="last-scan-box" style="display:none;padding:14px 16px;border-radius:var(--radius);
+         margin-bottom:12px;font-size:15px;font-weight:500;border:2px solid transparent;">
       <div style="font-size:11px;font-weight:400;opacity:0.7;margin-bottom:3px;">Last scan</div>
       <div id="last-scan-text"></div>
     </div>
 
-    <!-- Video preview -->
-    <div id="video-container" style="position:relative;background:#000;border-radius:var(--radius);overflow:hidden;width:100%;height:300px;">
-      <video id="scanner-video" autoplay muted playsinline
-             style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;display:block;"></video>
+    <!-- THE VIDEO — explicit width/height, no CSS tricks -->
+    <video id="scanner-video"
+           autoplay muted playsinline
+           width="640" height="360"
+           style="width:100%;height:auto;display:block;border-radius:var(--radius);background:#000;">
+    </video>
 
-      <!-- Animated scan line overlay -->
-      <div style="position:absolute;inset:0;pointer-events:none;">
-        <div id="scan-line" style="
-          position:absolute;left:5%;right:5%;height:2px;
-          background:rgba(43,108,176,0.85);
-          box-shadow:0 0 8px rgba(43,108,176,0.6);
-          animation:scanline 2s ease-in-out infinite;top:30%;"></div>
-        <!-- Corner guides -->
-        <div style="position:absolute;top:12px;left:12px;width:24px;height:24px;border-top:3px solid #2b6cb0;border-left:3px solid #2b6cb0;border-radius:2px 0 0 0;"></div>
-        <div style="position:absolute;top:12px;right:12px;width:24px;height:24px;border-top:3px solid #2b6cb0;border-right:3px solid #2b6cb0;border-radius:0 2px 0 0;"></div>
-        <div style="position:absolute;bottom:12px;left:12px;width:24px;height:24px;border-bottom:3px solid #2b6cb0;border-left:3px solid #2b6cb0;border-radius:0 0 0 2px;"></div>
-        <div style="position:absolute;bottom:12px;right:12px;width:24px;height:24px;border-bottom:3px solid #2b6cb0;border-right:3px solid #2b6cb0;border-radius:0 0 2px 0;"></div>
-      </div>
-    </div>
+    <!-- Hidden canvas for ZXing fallback -->
+    <canvas id="scan-canvas" style="display:none;"></canvas>
 
     <p style="font-size:12px;color:var(--muted);margin-top:8px;margin-bottom:10px;text-align:center;">
-      Hold the ID card steady within the frame — scanning is automatic
+      Hold the ID card steady in front of the camera — scanning is automatic
     </p>
-
     <button class="btn btn-outline btn-sm" onclick="stopCamera()">Stop camera</button>
   </div>
 </div>
-
-<style>
-@keyframes scanline { 0%,100%{top:15%} 50%{top:80%} }
-</style>
 
 <!-- Attendance table -->
 <div class="table-wrap">
@@ -141,9 +105,11 @@
 <script>
 const SESSION_ID = {{ sess.id }};
 const DEDUP_MS   = {{ dedup_seconds }} * 1000;
-let codeReader   = null;
-let lastScanned  = {};
 let currentMode  = 'usb';
+let stream       = null;
+let scanInterval = null;
+let lastScanned  = {};
+let detector     = null;
 
 // ── Mode toggle ───────────────────────────────────────────────────
 function setMode(mode) {
@@ -157,29 +123,105 @@ function setMode(mode) {
   if (mode === 'usb') document.getElementById('scan-input').focus();
 }
 
-// ── Camera status helpers ─────────────────────────────────────────
+// ── Status helpers ────────────────────────────────────────────────
 function setCamStatus(text, color) {
   document.getElementById('cam-status-text').textContent = text;
-  document.getElementById('cam-dot').style.background = color || '#888';
+  document.getElementById('cam-dot').style.background    = color || '#888';
 }
 
 function showLastScan(msg, type) {
   const box = document.getElementById('last-scan-box');
   const txt = document.getElementById('last-scan-text');
-  const styles = {
-    success: { bg:'#f0fff4', border:'#9ae6b4', color:'#276749' },
-    warning: { bg:'#fffbeb', border:'#fbd38d', color:'#744210' },
-    error:   { bg:'#fff5f5', border:'#feb2b2', color:'#c53030' },
-  }[type] || { bg:'#eee', border:'#ccc', color:'#333' };
-
-  txt.textContent = msg;
-  box.style.display     = 'block';
-  box.style.background  = styles.bg;
-  box.style.borderColor = styles.border;
-  box.style.color       = styles.color;
+  const s   = { success:{bg:'#f0fff4',border:'#9ae6b4',color:'#276749'},
+                warning:{bg:'#fffbeb',border:'#fbd38d',color:'#744210'},
+                error:  {bg:'#fff5f5',border:'#feb2b2',color:'#c53030'} }[type]
+              || {bg:'#eee',border:'#ccc',color:'#333'};
+  txt.textContent   = msg;
+  box.style.display = 'block';
+  box.style.background  = s.bg;
+  box.style.borderColor = s.border;
+  box.style.color       = s.color;
 }
 
-// ── USB / keyboard scan ───────────────────────────────────────────
+// ── Start camera ──────────────────────────────────────────────────
+async function startCamera() {
+  setCamStatus('Requesting camera access…', '#888');
+  const video = document.getElementById('scanner-video');
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    video.srcObject = stream;
+    await video.play();
+    setCamStatus('Camera active — hold barcode in frame', '#38a169');
+    startDecoding(video);
+  } catch(err) {
+    const msg = err.name === 'NotAllowedError'
+      ? 'Camera permission denied. Allow camera access in browser settings.'
+      : 'Camera error: ' + err.message;
+    setCamStatus(msg, '#c53030');
+  }
+}
+
+// ── Decoding — try native BarcodeDetector, fall back to ZXing ────
+async function startDecoding(video) {
+  // Try native BarcodeDetector (Chrome desktop/Android)
+  if ('BarcodeDetector' in window) {
+    detector = new BarcodeDetector({
+      formats: ['code_128','code_39','code_93','ean_13','ean_8','qr_code','pdf417','itf','upc_a','upc_e']
+    });
+    setCamStatus('Camera active — hold barcode in frame', '#38a169');
+    scanInterval = setInterval(async () => {
+      if (video.readyState < 2) return;
+      try {
+        const barcodes = await detector.detect(video);
+        if (barcodes.length > 0) handleCode(barcodes[0].rawValue);
+      } catch(_) {}
+    }, 300);
+    return;
+  }
+
+  // Fallback: ZXing canvas polling
+  if (!window.ZXing) {
+    setCamStatus('Barcode library unavailable — try Chrome.', '#c53030');
+    return;
+  }
+  const canvas  = document.getElementById('scan-canvas');
+  const ctx     = canvas.getContext('2d', { willReadFrequently: true });
+  const reader  = new ZXing.BrowserMultiFormatReader();
+
+  scanInterval = setInterval(() => {
+    if (video.readyState < 2 || video.videoWidth === 0) return;
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    const imgData = canvas.toDataURL('image/png');
+    reader.decodeFromImage(undefined, imgData)
+      .then(result => { if (result) handleCode(result.getText()); })
+      .catch(() => {});
+  }, 400);
+}
+
+function handleCode(raw) {
+  const id  = (raw || '').trim();
+  if (!id) return;
+  const now = Date.now();
+  if (lastScanned[id] && (now - lastScanned[id]) < DEDUP_MS) return;
+  lastScanned[id] = now;
+  sendScan(id, 'cam');
+}
+
+// ── Stop camera ───────────────────────────────────────────────────
+function stopCamera() {
+  if (scanInterval) { clearInterval(scanInterval); scanInterval = null; }
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  const video = document.getElementById('scanner-video');
+  video.srcObject = null;
+  setCamStatus('Camera stopped.', '#888');
+}
+
+// ── USB scan ──────────────────────────────────────────────────────
 const scanInput = document.getElementById('scan-input');
 scanInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitScan(); });
 document.addEventListener('visibilitychange', () => {
@@ -192,67 +234,10 @@ async function submitScan() {
   scanInput.value = '';
   scanInput.focus();
   if (!id) return;
-  await sendScan(id, 'usb');
+  sendScan(id, 'usb');
 }
 
-// ── Camera scan (ZXing) ───────────────────────────────────────────
-function startCamera() {
-  if (!window.ZXing) {
-    setCamStatus('ZXing library failed to load — try refreshing.', '#c53030');
-    return;
-  }
-  setCamStatus('Requesting camera access…', '#888');
-
-  const video = document.getElementById('scanner-video');
-
-  // Step 1: Get the camera stream ourselves so we control the video element
-  const constraints = {
-    video: {
-      facingMode: { ideal: 'environment' },  // rear camera on mobile
-      width:  { ideal: 1280 },
-      height: { ideal: 720 }
-    }
-  };
-
-  navigator.mediaDevices.getUserMedia(constraints)
-    .then(stream => {
-      video.srcObject = stream;
-      video.setAttribute('playsinline', true);
-      video.play();
-
-      setCamStatus('Camera active — hold barcode in frame', '#38a169');
-
-      // Step 2: Attach ZXing to the now-playing video element
-      codeReader = new ZXing.BrowserMultiFormatReader();
-      codeReader.decodeFromVideoElement(video, async (result, err) => {
-        if (!result) return;
-        const id  = result.getText().trim();
-        const now = Date.now();
-        if (lastScanned[id] && (now - lastScanned[id]) < DEDUP_MS) return;
-        lastScanned[id] = now;
-        await sendScan(id, 'cam');
-      });
-    })
-    .catch(err => {
-      const msg = err.name === 'NotAllowedError'
-        ? 'Camera permission denied — please allow camera access in your browser settings.'
-        : 'Camera error: ' + err.message;
-      setCamStatus(msg, '#c53030');
-    });
-}
-
-function stopCamera() {
-  if (codeReader) { codeReader.reset(); codeReader = null; }
-  const video = document.getElementById('scanner-video');
-  if (video && video.srcObject) {
-    video.srcObject.getTracks().forEach(t => t.stop());
-    video.srcObject = null;
-  }
-  video.load(); // reset the element fully
-  setCamStatus('Camera stopped.', '#888');
-}
-
-// ── Core scan API call ────────────────────────────────────────────
+// ── API call ──────────────────────────────────────────────────────
 async function sendScan(studentId, source) {
   try {
     const res  = await fetch('/api/scan', {
@@ -261,76 +246,60 @@ async function sendScan(studentId, source) {
       body: JSON.stringify({session_id: SESSION_ID, student_id: studentId})
     });
     const data = await res.json();
+    const status = data.status;
+    const msg    = status === 'ok'        ? '✓ ' + data.message
+                 : status === 'duplicate' ? '⚠ ' + data.message
+                 : status === 'done'      ? 'ℹ ' + data.message
+                 :                          '✗ ' + data.message;
+    const type   = status === 'ok' ? 'success'
+                 : status === 'error' ? 'error' : 'warning';
 
-    if (data.status === 'ok') {
-      const msg = '✓ ' + data.message;
-      if (source === 'cam') showLastScan(msg, 'success');
-      else showFlash('usb', msg, 'success');
-      updateRow(data.student_id, data.action, data.time);
-      updateStats();
-    } else if (data.status === 'duplicate') {
-      const msg = '⚠ ' + data.message;
-      if (source === 'cam') showLastScan(msg, 'warning');
-      else showFlash('usb', msg, 'warning');
-    } else if (data.status === 'done') {
-      const msg = 'ℹ ' + data.message;
-      if (source === 'cam') showLastScan(msg, 'warning');
-      else showFlash('usb', msg, 'warning');
-    } else {
-      const msg = '✗ ' + data.message;
-      if (source === 'cam') showLastScan(msg, 'error');
-      else showFlash('usb', msg, 'error');
-    }
-  } catch (e) {
+    if (source === 'cam') showLastScan(msg, type);
+    else showFlash('usb', msg, type);
+
+    if (status === 'ok') { updateRow(data.student_id, data.action, data.time); updateStats(); }
+  } catch(e) {
     const msg = 'Network error — check connection.';
     if (source === 'cam') showLastScan(msg, 'error');
     else showFlash('usb', msg, 'error');
   }
 }
 
-// ── USB flash message ─────────────────────────────────────────────
+// ── USB flash ─────────────────────────────────────────────────────
 function showFlash(target, msg, type) {
   const el = document.getElementById('flash-' + target);
-  const colors = {
-    success: {bg:'var(--success-bg)', color:'var(--success)'},
-    warning: {bg:'var(--warning-bg)', color:'var(--warning)'},
-    error:   {bg:'var(--danger-bg)',  color:'var(--danger)'}
-  }[type] || {};
-  el.textContent = msg;
-  el.style.background = colors.bg || '';
-  el.style.color = colors.color || '';
-  el.style.border = '1px solid ' + (colors.bg || 'transparent');
+  const c  = { success:{bg:'var(--success-bg)',color:'var(--success)'},
+               warning:{bg:'var(--warning-bg)',color:'var(--warning)'},
+               error:  {bg:'var(--danger-bg)', color:'var(--danger)'} }[type] || {};
+  el.textContent      = msg;
+  el.style.background = c.bg    || '';
+  el.style.color      = c.color || '';
+  el.style.border     = '1px solid ' + (c.bg || 'transparent');
   el.classList.remove('hidden');
   clearTimeout(el._t);
   el._t = setTimeout(() => el.classList.add('hidden'), 5000);
 }
 
-// ── Table + stats update ──────────────────────────────────────────
+// ── Table + stats ─────────────────────────────────────────────────
 function updateRow(studentId, action, time) {
   const ti = document.getElementById('ti-' + studentId);
   const to = document.getElementById('to-' + studentId);
   const st = document.getElementById('st-' + studentId);
   if (!ti) return;
-  if (action === 'time_in') {
-    ti.textContent = time;
-    st.innerHTML = '<span class="badge badge-present">Present</span>';
-  } else if (action === 'time_out') {
-    to.textContent = time;
-    st.innerHTML = '<span class="badge badge-out">Out</span>';
-  }
+  if (action === 'time_in')  { ti.textContent = time; st.innerHTML = '<span class="badge badge-present">Present</span>'; }
+  if (action === 'time_out') { to.textContent = time; st.innerHTML = '<span class="badge badge-out">Out</span>'; }
 }
 
 function updateStats() {
   const rows = document.querySelectorAll('#att-table tr');
-  let present = 0, total = rows.length;
+  let present = 0;
   rows.forEach(r => {
-    const badge = r.querySelector('.badge');
-    if (badge && (badge.classList.contains('badge-present') || badge.classList.contains('badge-out')))
-      present++;
+    const b = r.querySelector('.badge');
+    if (b && (b.classList.contains('badge-present') || b.classList.contains('badge-out'))) present++;
   });
   document.getElementById('s-present').textContent = present;
-  document.getElementById('s-absent').textContent  = total - present;
-  document.getElementById('s-pct').textContent     = total ? Math.round(present / total * 100) + '%' : '0%';
+  document.getElementById('s-absent').textContent  = rows.length - present;
+  document.getElementById('s-pct').textContent     = rows.length ? Math.round(present / rows.length * 100) + '%' : '0%';
 }
 </script>
 {% endblock %}

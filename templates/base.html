@@ -26,6 +26,7 @@
   nav a:hover { color: #fff; text-decoration: none; }
   nav .spacer { flex: 1; }
   nav .user { font-size: 13px; color: rgba(255,255,255,0.6); }
+  nav .version { font-size: 11px; color: rgba(255,255,255,0.35); font-family: monospace; }
 
   /* Layout */
   .container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
@@ -131,6 +132,7 @@
     <span class="spacer"></span>
     <span class="user">{{ session.username }}</span>
     <a href="{{ url_for('logout') }}">Log out</a>
+    <span class="version">v{{ build_version }}</span>
   {% endif %}
 </nav>
 <div class="container">

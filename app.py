@@ -18,6 +18,38 @@ app.secret_key = os.environ.get("SECRET_KEY", "change-me-in-production")
 
 DATABASE_URL  = os.environ.get("DATABASE_URL", "")
 DEDUP_SECONDS = int(os.environ.get("DEDUP_SECONDS", "30"))
+# Build version — derived from git at startup
+import subprocess as _sp
+def _get_version():
+    try:
+        sha = _sp.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=_sp.DEVNULL
+        ).decode().strip()
+        count = _sp.check_output(
+            ["git", "rev-list", "--count", "HEAD"],
+            stderr=_sp.DEVNULL
+        ).decode().strip()
+        return f"{count}.{sha}"
+    except Exception:
+        return "dev"
+BUILD_VERSION = _get_version()
+# Build version — derived from git at startup
+import subprocess as _sp
+def _get_version():
+    try:
+        sha = _sp.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=_sp.DEVNULL
+        ).decode().strip()
+        count = _sp.check_output(
+            ["git", "rev-list", "--count", "HEAD"],
+            stderr=_sp.DEVNULL
+        ).decode().strip()
+        return f"{count}.{sha}"
+    except Exception:
+        return "dev"
+BUILD_VERSION = _get_version()
 
 # Render gives postgres:// URLs; psycopg2 needs postgresql://
 if DATABASE_URL.startswith("postgres://"):
@@ -852,6 +884,10 @@ def bootstrap():
 
 
 bootstrap()
+
+@app.context_processor
+def inject_version():
+    return dict(build_version=BUILD_VERSION)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
