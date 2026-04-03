@@ -6,16 +6,42 @@
     <h1>User Management</h1>
     <p>Create and manage staff accounts for the attendance system.</p>
   </div>
-  <a href="{{ url_for('backup') }}" class="btn btn-outline">
-    ↓ Download full backup
-  </a>
+  <a href="{{ url_for('backup') }}" class="btn btn-outline">↓ Download full backup</a>
 </div>
+
 <div class="alert alert-warning" style="font-size:13px;">
   <strong>Backup tip:</strong> Download a backup regularly and keep it somewhere safe (Google Drive, USB drive).
   The ZIP contains all courses, rosters, sessions, and attendance records as CSVs.
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start;flex-wrap:wrap;">
+<!-- Settings -->
+<div class="card" style="margin-bottom:1.5rem;">
+  <h2 style="font-size:16px;font-weight:600;margin-bottom:.25rem;">System settings</h2>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:1rem;">
+    These settings apply globally across all courses and sessions.
+  </p>
+  <form method="POST" action="{{ url_for('admin_settings') }}"
+        style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+    <div class="form-group" style="margin:0;flex:1;min-width:200px;">
+      <label>Duplicate scan window (seconds)</label>
+      <input type="number" name="dedup_seconds" min="5" max="7200"
+             value="{{ dedup_seconds }}" style="max-width:140px;">
+      <p style="font-size:12px;color:var(--muted);margin-top:4px;">
+        If the same ID is scanned again within this window it will be ignored.
+        For a 3-hour lab, try <strong>10800</strong> (3 hrs) to prevent any re-scan.
+        Current: <strong>{{ dedup_seconds }}s
+        ({% if dedup_seconds < 60 %}{{ dedup_seconds }} seconds
+        {% elif dedup_seconds < 3600 %}{{ (dedup_seconds // 60) }} minutes
+        {% else %}{{ "%.1f"|format(dedup_seconds / 3600) }} hours{% endif %})
+        </strong>
+      </p>
+    </div>
+    <button type="submit" class="btn btn-primary" style="height:38px;">Save settings</button>
+  </form>
+</div>
+
+<!-- Users grid -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;align-items:start;">
   <div class="card">
     <h2 style="font-size:16px;font-weight:600;margin-bottom:1rem;">Create new user</h2>
     <form method="POST">

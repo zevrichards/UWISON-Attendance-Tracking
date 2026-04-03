@@ -128,7 +128,36 @@ def init_db():
                 last_scan  TEXT,
                 UNIQUE(session_id, student_id)
             );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
+            INSERT INTO settings (key, value) VALUES ('dedup_seconds', '300')
+            ON CONFLICT (key) DO NOTHING;
             """)
+
+
+# ---------------------------------------------------------------------------
+# Settings helpers
+# ---------------------------------------------------------------------------
+
+def get_setting(key, default=None):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT value FROM settings WHERE key=%s", (key,))
+            row = cur.fetchone()
+            return row["value"] if row else default
+
+def set_setting(key, value):
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO settings (key, value) VALUES (%s,%s) "
+                "ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value",
+                (key, str(value))
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -535,9 +564,10 @@ def scan_session(session_id):
             records = cur.fetchall()
     present = sum(1 for r in records if r["time_in"])
     total   = len(records)
+    dedup   = int(get_setting("dedup_seconds", DEDUP_SECONDS))
     return render_template("scan_session.html", sess=sess, records=records,
                            present=present, total=total,
-                           dedup_seconds=DEDUP_SECONDS)
+                           dedup_seconds=dedup)
 
 
 # ---------------------------------------------------------------------------
@@ -554,8 +584,9 @@ def api_scan():
     if not session_id or not student_id:
         return jsonify(status="error", message="Missing data"), 400
 
-    now     = datetime.utcnow()
-    now_str = now.isoformat()
+    now          = datetime.utcnow()
+    now_str      = now.isoformat()
+    dedup_secs   = int(get_setting("dedup_seconds", DEDUP_SECONDS))
 
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -589,7 +620,7 @@ def api_scan():
             if rec["last_scan"]:
                 last = datetime.fromisoformat(rec["last_scan"])
                 diff = (now - last).total_seconds()
-                if diff < DEDUP_SECONDS:
+                if diff < dedup_secs:
                     return jsonify(
                         status="duplicate",
                         message=f"Already scanned {int(diff)}s ago — ignored",
@@ -830,6 +861,25 @@ def export_semester_excel(course_id):
 
 
 # ---------------------------------------------------------------------------
+# Admin — settings
+# ---------------------------------------------------------------------------
+
+@app.route("/admin/settings", methods=["POST"])
+@login_required
+def admin_settings():
+    if session.get("role") != "admin":
+        flash("Admin access required.", "error")
+        return redirect(url_for("courses"))
+    dedup = request.form.get("dedup_seconds", "").strip()
+    if not dedup.isdigit() or int(dedup) < 5:
+        flash("Dedup window must be a number of seconds (minimum 5).", "error")
+    else:
+        set_setting("dedup_seconds", dedup)
+        flash(f"Dedup window updated to {dedup} seconds.", "success")
+    return redirect(url_for("admin_users"))
+
+
+# ---------------------------------------------------------------------------
 # Admin — user management
 # ---------------------------------------------------------------------------
 
@@ -865,7 +915,8 @@ def admin_users():
         with conn.cursor() as cur:
             cur.execute("SELECT id, username, role FROM users ORDER BY username")
             users = cur.fetchall()
-    return render_template("admin_users.html", users=users)
+    dedup = int(get_setting("dedup_seconds", DEDUP_SECONDS))
+    return render_template("admin_users.html", users=users, dedup_seconds=dedup)
 
 
 # ---------------------------------------------------------------------------
@@ -891,6 +942,16 @@ def inject_version():
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
+
+# ---------------------------------------------------------------------------
+# Camera test page
+# ---------------------------------------------------------------------------
+
+@app.route("/camera-test")
+@login_required
+def camera_test():
+    return render_template("camera_test.html")
 
 
 # ---------------------------------------------------------------------------

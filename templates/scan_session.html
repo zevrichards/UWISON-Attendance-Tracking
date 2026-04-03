@@ -191,41 +191,55 @@ async function startCamera() {
 
 // ── Decoding — try native BarcodeDetector, fall back to ZXing ────
 async function startDecoding(video) {
-  // Try native BarcodeDetector (Chrome desktop/Android)
+
+  // Try native BarcodeDetector first (Chrome desktop + Android)
   if ('BarcodeDetector' in window) {
-    detector = new BarcodeDetector({
-      formats: ['code_128','code_39','code_93','ean_13','ean_8','qr_code','pdf417','itf','upc_a','upc_e']
-    });
+    // Get all supported formats rather than guessing
+    const supported = await BarcodeDetector.getSupportedFormats();
+    detector = new BarcodeDetector({ formats: supported });
     setCamStatus('Camera active — hold barcode in frame', '#38a169');
+
     scanInterval = setInterval(async () => {
-      if (video.readyState < 2) return;
+      if (video.readyState < 2 || video.paused) return;
       try {
         const barcodes = await detector.detect(video);
-        if (barcodes.length > 0) handleCode(barcodes[0].rawValue);
-      } catch(_) {}
-    }, 300);
+        if (barcodes.length > 0) {
+          const b = barcodes[0];
+          setCamStatus('Detected: ' + b.format + ' — processing…', '#f59e0b');
+          handleCode(b.rawValue);
+        }
+      } catch(e) {
+        // silent — detection errors are expected on frames without barcodes
+      }
+    }, 200);
     return;
   }
 
-  // Fallback: ZXing canvas polling
+  // Fallback: ZXing via canvas
   if (!window.ZXing) {
-    setCamStatus('Barcode library unavailable — try Chrome.', '#c53030');
+    setCamStatus('Barcode library unavailable — try Chrome or Edge.', '#c53030');
     return;
   }
-  const canvas  = document.getElementById('scan-canvas');
-  const ctx     = canvas.getContext('2d', { willReadFrequently: true });
-  const reader  = new ZXing.BrowserMultiFormatReader();
+
+  setCamStatus('Camera active (ZXing mode) — hold barcode in frame', '#38a169');
+  const canvas = document.getElementById('scan-canvas');
+  const ctx    = canvas.getContext('2d', { willReadFrequently: true });
+  const reader = new ZXing.BrowserMultiFormatReader();
 
   scanInterval = setInterval(() => {
-    if (video.readyState < 2 || video.videoWidth === 0) return;
+    if (video.readyState < 2 || video.videoWidth === 0 || video.paused) return;
     canvas.width  = video.videoWidth;
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0);
-    const imgData = canvas.toDataURL('image/png');
-    reader.decodeFromImage(undefined, imgData)
-      .then(result => { if (result) handleCode(result.getText()); })
+    reader.decodeFromCanvas(canvas)
+      .then(result => {
+        if (result) {
+          setCamStatus('Detected — processing…', '#f59e0b');
+          handleCode(result.getText());
+        }
+      })
       .catch(() => {});
-  }, 400);
+  }, 250);
 }
 
 function handleCode(raw) {
