@@ -34,22 +34,6 @@ def _get_version():
     except Exception:
         return "dev"
 BUILD_VERSION = _get_version()
-# Build version — derived from git at startup
-import subprocess as _sp
-def _get_version():
-    try:
-        sha = _sp.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            stderr=_sp.DEVNULL
-        ).decode().strip()
-        count = _sp.check_output(
-            ["git", "rev-list", "--count", "HEAD"],
-            stderr=_sp.DEVNULL
-        ).decode().strip()
-        return f"{count}.{sha}"
-    except Exception:
-        return "dev"
-BUILD_VERSION = _get_version()
 
 # Render gives postgres:// URLs; psycopg2 needs postgresql://
 if DATABASE_URL.startswith("postgres://"):
@@ -76,6 +60,7 @@ def get_db():
 
 
 def init_db():
+    """Create all tables if they don't already exist. Safe to call on every boot."""
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -577,6 +562,17 @@ def scan_session(session_id):
 @app.route("/api/scan", methods=["POST"])
 @login_required
 def api_scan():
+    """
+    Handle a QR/barcode scan for a session.
+
+    Scan state machine (per student per session):
+      1st scan → records time_in  (student arrived)
+      2nd scan → records time_out (student departed)
+      3rd scan → no-op, returns 'done' (already fully logged)
+
+    Duplicate scans within the dedup window are silently ignored to prevent
+    accidental double-logging from a single QR presentation.
+    """
     data       = request.get_json()
     session_id = data.get("session_id")
     student_id = str(data.get("student_id", "")).strip()
@@ -798,8 +794,8 @@ def export_semester_excel(course_id):
     ws.title = "Attendance"
 
     header_fill = PatternFill("solid", fgColor="1F4E79")
-    risk_fill   = PatternFill("solid", fgColor="FFCCCC")
-    ok_fill     = PatternFill("solid", fgColor="CCFFCC")
+    risk_fill   = PatternFill("solid", fgColor="FFCCCC")  # red tint — below 75% attendance
+    ok_fill     = PatternFill("solid", fgColor="CCFFCC")  # green tint — 75% or above
     header_font = Font(color="FFFFFF", bold=True)
 
     headers = (["Student ID", "Name"] +
@@ -833,6 +829,7 @@ def export_semester_excel(course_id):
 
         total  = len(sessions_list)
         pct    = round(attended / total * 100, 1) if total else 0
+        # UWI policy: students below 75% attendance are flagged as at-risk
         status = "AT RISK" if pct < 75 else "OK"
         base   = 3 + len(sessions_list)
         ws.cell(row=row_idx, column=base,     value=attended)
@@ -924,6 +921,11 @@ def admin_users():
 # ---------------------------------------------------------------------------
 
 def bootstrap():
+    """
+    Run once at startup. Initialises the database schema and creates a default
+    admin account if no users exist yet. Credentials are set via the
+    ADMIN_PASSWORD environment variable; defaults to 'changeme123' if unset.
+    """
     init_db()
     with get_db() as conn:
         with conn.cursor() as cur:
